@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Plus, Trash2, Dumbbell } from 'lucide-react';
 import { createExerciseAction, deleteExerciseAction } from '@/lib/actions';
 import { Exercise, MUSCLE_GROUPS } from '@/lib/types';
 
@@ -59,6 +60,7 @@ export default function ExercisesClient({ exercises }: { exercises: Exercise[] }
             ))}
           </select>
           <button className="btn-primary" onClick={add} disabled={pending}>
+            <Plus size={16} />
             Добавить
           </button>
         </div>
@@ -67,7 +69,10 @@ export default function ExercisesClient({ exercises }: { exercises: Exercise[] }
 
       {grouped.map(([groupName, list]) => (
         <div key={groupName}>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-mut">{groupName}</h2>
+          <h2 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-mut">
+            <Dumbbell size={13} className="text-acc" />
+            {groupName}
+          </h2>
           <div className="card divide-y divide-line">
             {list.map((ex) => (
               <div key={ex.id} className="flex items-center justify-between px-4 py-3">
@@ -82,10 +87,10 @@ export default function ExercisesClient({ exercises }: { exercises: Exercise[] }
                 {ex.user_id != null && (
                   <button
                     onClick={() => remove(ex.id)}
-                    className="text-sm text-mut transition-colors hover:text-hot"
+                    className="text-mut transition-colors hover:text-hot"
                     aria-label={`Удалить ${ex.name}`}
                   >
-                    Удалить
+                    <Trash2 size={16} />
                   </button>
                 )}
               </div>

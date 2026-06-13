@@ -4,6 +4,6 @@ import ExercisesClient from '@/components/ExercisesClient';
 
 export default async function ExercisesPage() {
   const user = await requireUser();
-  const exercises = getExercises(user.id);
+  const exercises = await getExercises(user.id);
   return <ExercisesClient exercises={exercises} />;
 }

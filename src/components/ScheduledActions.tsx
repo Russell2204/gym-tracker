@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Play, X } from 'lucide-react';
 import { cancelScheduledAction, startWorkoutAction } from '@/lib/actions';
 
 export default function ScheduledActions({ workoutId }: { workoutId: number }) {
@@ -23,9 +24,11 @@ export default function ScheduledActions({ workoutId }: { workoutId: number }) {
   return (
     <div className="flex flex-col gap-2 sm:flex-row">
       <button className="btn-primary flex-1" onClick={start} disabled={pending}>
+        <Play size={16} />
         Начать тренировку
       </button>
       <button className="btn-danger-ghost" onClick={cancel} disabled={pending}>
+        <X size={16} />
         Отменить
       </button>
     </div>

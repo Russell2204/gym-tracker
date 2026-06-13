@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronLeft, ChevronRight, ArrowRight } from 'lucide-react';
 import { scheduleWorkoutAction } from '@/lib/actions';
 import { CalendarWorkout, todayLocalISO } from '@/lib/types';
 
@@ -85,11 +87,11 @@ export default function CalendarClient({
         <h1 className="text-xl font-semibold">Календарь</h1>
         <div className="flex items-center gap-1">
           <button className="btn-ghost h-9 w-9 !p-0" onClick={() => shiftMonth(-1)} aria-label="Предыдущий месяц">
-            ‹
+            <ChevronLeft size={17} />
           </button>
           <div className="w-36 text-center text-sm font-medium capitalize">{monthTitle}</div>
           <button className="btn-ghost h-9 w-9 !p-0" onClick={() => shiftMonth(1)} aria-label="Следующий месяц">
-            ›
+            <ChevronRight size={17} />
           </button>
         </div>
       </div>
@@ -102,7 +104,15 @@ export default function CalendarClient({
             </div>
           ))}
         </div>
-        <div className="mt-1 grid grid-cols-7 gap-1">
+        <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={`${cursor.y}-${cursor.m}`}
+          initial={{ opacity: 0, x: 16 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -16 }}
+          transition={{ duration: 0.18 }}
+          className="mt-1 grid grid-cols-7 gap-1"
+        >
           {cells.map((cell, i) => {
             if (!cell) return <div key={`x${i}`} />;
             const list = byDate.get(cell.date) ?? [];
@@ -114,7 +124,7 @@ export default function CalendarClient({
                 onClick={() => canSchedule && setModalDate(cell.date)}
                 className={
                   'min-h-[72px] rounded-xl border p-1.5 transition-colors ' +
-                  (isToday ? 'border-acc/70 bg-acc/5 ' : 'border-line ') +
+                  (isToday ? 'border-acc/70 bg-acc/5 ring-1 ring-acc/30 ' : 'border-line ') +
                   (canSchedule ? 'cursor-pointer hover:border-mut/60' : 'opacity-60')
                 }
               >
@@ -143,7 +153,8 @@ export default function CalendarClient({
               </div>
             );
           })}
-        </div>
+        </motion.div>
+        </AnimatePresence>
         <div className="mt-3 flex flex-wrap gap-3 px-1 pb-1 text-[11px] text-mut">
           <span className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded border border-acc/60" /> запланирована
@@ -182,7 +193,7 @@ export default function CalendarClient({
                   disabled={pending}
                 >
                   <span className="font-medium">{p.name}</span>
-                  <span className="text-acc">→</span>
+                  <ArrowRight size={15} className="text-acc" />
                 </button>
               ))}
               <button

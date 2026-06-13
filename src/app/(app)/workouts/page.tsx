@@ -1,11 +1,12 @@
 import Link from 'next/link';
+import { ChevronRight } from 'lucide-react';
 import { requireUser } from '@/lib/auth';
 import { listFinishedWorkouts } from '@/lib/queries';
 import { fmtDate, fmtDuration, fmtKg, plural } from '@/lib/types';
 
 export default async function WorkoutsPage() {
   const user = await requireUser();
-  const workouts = listFinishedWorkouts(user.id);
+  const workouts = await listFinishedWorkouts(user.id);
 
   return (
     <div className="space-y-5">
@@ -19,7 +20,7 @@ export default async function WorkoutsPage() {
 
       <div className="space-y-3">
         {workouts.map((w) => (
-          <Link key={w.id} href={`/workouts/${w.id}`} className="card block p-4 transition-colors hover:border-mut/60">
+          <Link key={w.id} href={`/workouts/${w.id}`} className="card-hover group block p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="truncate font-semibold">{w.name}</div>
@@ -33,9 +34,12 @@ export default async function WorkoutsPage() {
                   {w.sets_count} {plural(w.sets_count, 'подход', 'подхода', 'подходов')}
                 </div>
               </div>
-              <div className="num shrink-0 text-right text-xl font-bold">
-                {fmtKg(w.volume)}
-                <div className="text-xs font-medium text-mut">кг</div>
+              <div className="flex shrink-0 items-center gap-2">
+                <div className="num text-right text-xl font-bold">
+                  <span className="text-gradient">{fmtKg(w.volume)}</span>
+                  <div className="text-xs font-medium text-mut">кг</div>
+                </div>
+                <ChevronRight size={18} className="text-mut transition-transform group-hover:translate-x-0.5" />
               </div>
             </div>
           </Link>

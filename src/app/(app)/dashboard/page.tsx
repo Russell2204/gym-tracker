@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Flame, BarChart3, ArrowRight, Trophy } from 'lucide-react';
 import { requireUser } from '@/lib/auth';
 import { getActiveWorkout, getPrograms, getScheduledFor, listFinishedWorkouts, getStats } from '@/lib/queries';
 import { fmtDate, fmtDuration, fmtKg, plural, todayLocalISO } from '@/lib/types';
@@ -6,32 +7,47 @@ import StartButtons from '@/components/StartButtons';
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const active = getActiveWorkout(user.id);
   const today = todayLocalISO();
-  const scheduledToday = getScheduledFor(user.id, today);
-  const programs = getPrograms(user.id).map((p) => ({ id: p.id, name: p.name, count: p.items.length }));
-  const finished = listFinishedWorkouts(user.id);
+  const [active, scheduledToday, programsFull, finished, stats] = await Promise.all([
+    getActiveWorkout(user.id),
+    getScheduledFor(user.id, today),
+    getPrograms(user.id),
+    listFinishedWorkouts(user.id),
+    getStats(user.id)
+  ]);
+  const programs = programsFull.map((p) => ({ id: p.id, name: p.name, count: p.items.length }));
   const last = finished[0];
   const prevToLast = finished[1];
-  const stats = getStats(user.id);
 
   const hour = new Date().getHours();
   const greeting = hour < 5 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
 
   return (
     <div className="space-y-5">
-      <h1 className="text-xl font-semibold">
-        {greeting}, {user.name}
-      </h1>
+      <div className="relative -mx-4 -mt-5 overflow-hidden bg-hero-radial px-4 pb-5 pt-6">
+        <h1 className="text-2xl font-semibold">
+          {greeting}, <span className="text-gradient">{user.name}</span>
+        </h1>
+        <p className="mt-1 text-sm text-mut">Каждый подход — в зачёт.</p>
+      </div>
 
       {active && (
-        <Link href={`/workouts/${active.id}`} className="card block border-acc/50 bg-acc/10 p-4">
+        <Link href={`/workouts/${active.id}`} className="card block border-acc/50 bg-acc/10 p-4 shadow-glow">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-medium uppercase tracking-wide text-acc">Идёт тренировка</div>
+              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-acc">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-acc opacity-60" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-acc" />
+                </span>
+                Идёт тренировка
+              </div>
               <div className="mt-1 font-semibold">{active.name}</div>
             </div>
-            <span className="btn-primary">Продолжить →</span>
+            <span className="btn-primary">
+              Продолжить
+              <ArrowRight size={16} />
+            </span>
           </div>
         </Link>
       )}
@@ -47,7 +63,10 @@ export default async function DashboardPage() {
                 className="flex items-center justify-between rounded-xl border border-line px-3 py-2.5 transition-colors hover:border-mut/60"
               >
                 <span className="font-medium">{w.name}</span>
-                <span className="text-sm text-acc">Открыть →</span>
+                <span className="flex items-center gap-1 text-sm text-acc">
+                  Открыть
+                  <ArrowRight size={14} />
+                </span>
               </Link>
             ))}
           </div>
@@ -57,12 +76,18 @@ export default async function DashboardPage() {
       {!active && <StartButtons programs={programs} />}
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="card p-4">
-          <div className="text-xs text-mut">Тренировок в этом месяце</div>
+        <div className="card-hover p-4">
+          <div className="flex items-center gap-1.5 text-xs text-mut">
+            <Flame size={13} className="text-warn" />
+            Тренировок в этом месяце
+          </div>
           <div className="num mt-1 text-3xl font-bold">{stats.monthCount}</div>
         </div>
-        <div className="card p-4">
-          <div className="text-xs text-mut">Тоннаж за 7 дней</div>
+        <div className="card-hover p-4">
+          <div className="flex items-center gap-1.5 text-xs text-mut">
+            <BarChart3 size={13} className="text-acc" />
+            Тоннаж за 7 дней
+          </div>
           <div className="num mt-1 text-3xl font-bold">
             {fmtKg(stats.weekVolume)} <span className="text-base font-medium text-mut">кг</span>
           </div>
@@ -72,9 +97,13 @@ export default async function DashboardPage() {
       {last && (
         <div className="card p-4">
           <div className="flex items-center justify-between">
-            <div className="text-xs font-medium uppercase tracking-wide text-mut">Последняя тренировка</div>
-            <Link href={`/workouts/${last.id}`} className="text-sm text-acc hover:underline">
-              Детали →
+            <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-mut">
+              <Trophy size={13} className="text-warn" />
+              Последняя тренировка
+            </div>
+            <Link href={`/workouts/${last.id}`} className="flex items-center gap-1 text-sm text-acc hover:underline">
+              Детали
+              <ArrowRight size={14} />
             </Link>
           </div>
           <div className="mt-2 font-semibold">{last.name}</div>
@@ -86,7 +115,8 @@ export default async function DashboardPage() {
               ` · ${fmtDuration((new Date(last.finished_at).getTime() - new Date(last.started_at).getTime()) / 1000)}`}
           </div>
           <div className="num mt-3 text-2xl font-bold">
-            {fmtKg(last.volume)} <span className="text-sm font-medium text-mut">кг тоннаж</span>
+            <span className="text-gradient">{fmtKg(last.volume)}</span>{' '}
+            <span className="text-sm font-medium text-mut">кг тоннаж</span>
             {prevToLast && prevToLast.volume > 0 && (
               <span
                 className={

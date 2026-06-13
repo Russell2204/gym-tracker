@@ -3,7 +3,7 @@
 import bcrypt from 'bcryptjs';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { db, createDefaultProgram, snapshotProgramToWorkout } from './db';
+import { getDb, all, get, run, createDefaultProgram, snapshotProgramToWorkout } from './db';
 import { createSession, destroySession, requireUser } from './auth';
 
 const now = () => new Date().toISOString();
@@ -25,25 +25,29 @@ export async function registerAction(data: { name: string; email: string; passwo
   if (data.password.length < 6) return { error: 'Пароль — минимум 6 символов' };
   if (!/^\S+@\S+\.\S+$/.test(email)) return { error: 'Похоже, в email опечатка' };
 
-  const exists = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  const exists = await get<{ id: number }>('SELECT id FROM users WHERE email = ?', [email]);
   if (exists) return { error: 'Аккаунт с таким email уже есть — попробуй войти' };
 
   const hash = bcrypt.hashSync(data.password, 10);
-  const res = db
-    .prepare('INSERT INTO users (email, name, password_hash, created_at) VALUES (?, ?, ?, ?)')
-    .run(email, name, hash, now());
-  const userId = Number(res.lastInsertRowid);
+  const res = await run('INSERT INTO users (email, name, password_hash, created_at) VALUES (?, ?, ?, ?)', [
+    email,
+    name,
+    hash,
+    now()
+  ]);
+  const userId = res.lastInsertRowid;
 
-  createDefaultProgram(userId);
+  await createDefaultProgram(userId);
   await createSession({ id: userId, name, email });
   redirect('/dashboard');
 }
 
 export async function loginAction(data: { email: string; password: string }) {
   const email = data.email.trim().toLowerCase();
-  const user = db
-    .prepare('SELECT id, name, email, password_hash FROM users WHERE email = ?')
-    .get(email) as { id: number; name: string; email: string; password_hash: string } | undefined;
+  const user = await get<{ id: number; name: string; email: string; password_hash: string }>(
+    'SELECT id, name, email, password_hash FROM users WHERE email = ?',
+    [email]
+  );
 
   if (!user || !bcrypt.compareSync(data.password, user.password_hash)) {
     return { error: 'Неверный email или пароль' };
@@ -63,12 +67,12 @@ export async function createExerciseAction(data: { name: string; muscle_group: s
   const user = await requireUser();
   const name = data.name.trim();
   if (!name) return { error: 'Введи название упражнения' };
-  db.prepare('INSERT INTO exercises (user_id, name, muscle_group, created_at) VALUES (?, ?, ?, ?)').run(
+  await run('INSERT INTO exercises (user_id, name, muscle_group, created_at) VALUES (?, ?, ?, ?)', [
     user.id,
     name,
     data.muscle_group || 'Другое',
     now()
-  );
+  ]);
   revalidatePath('/exercises');
   return { ok: true };
 }
@@ -76,7 +80,7 @@ export async function createExerciseAction(data: { name: string; muscle_group: s
 export async function deleteExerciseAction(id: number) {
   const user = await requireUser();
   try {
-    const res = db.prepare('DELETE FROM exercises WHERE id = ? AND user_id = ?').run(id, user.id);
+    const res = await run('DELETE FROM exercises WHERE id = ? AND user_id = ?', [id, user.id]);
     if (res.changes === 0) return { error: 'Удалять можно только свои упражнения' };
   } catch {
     return { error: 'Упражнение используется в программах или тренировках — сначала убери его оттуда' };
@@ -106,45 +110,56 @@ export async function saveProgramAction(data: ProgramPayload) {
   if (!name) return { error: 'Дай программе название' };
   if (data.items.length === 0) return { error: 'Добавь хотя бы одно упражнение' };
 
-  const tx = db.transaction(() => {
-    let programId = data.id ?? 0;
+  const client = await getDb();
+  const trx = await client.transaction('write');
+  try {
+    let programId: number;
     if (data.id) {
-      const owned = db.prepare('SELECT id FROM programs WHERE id = ? AND user_id = ?').get(data.id, user.id);
+      const owned = (
+        await trx.execute({
+          sql: 'SELECT id FROM programs WHERE id = ? AND user_id = ?',
+          args: [data.id, user.id]
+        })
+      ).rows[0];
       if (!owned) throw new Error('not-found');
-      db.prepare('UPDATE programs SET name = ?, description = ? WHERE id = ?').run(
-        name,
-        data.description.trim() || null,
-        data.id
-      );
-      db.prepare('DELETE FROM program_exercises WHERE program_id = ?').run(data.id);
+      await trx.execute({
+        sql: 'UPDATE programs SET name = ?, description = ? WHERE id = ?',
+        args: [name, data.description.trim() || null, data.id]
+      });
+      await trx.execute({
+        sql: 'DELETE FROM program_exercises WHERE program_id = ?',
+        args: [data.id]
+      });
+      programId = data.id;
     } else {
-      const res = db
-        .prepare('INSERT INTO programs (user_id, name, description, created_at) VALUES (?, ?, ?, ?)')
-        .run(user.id, name, data.description.trim() || null, now());
+      const res = await trx.execute({
+        sql: 'INSERT INTO programs (user_id, name, description, created_at) VALUES (?, ?, ?, ?)',
+        args: [user.id, name, data.description.trim() || null, now()]
+      });
       programId = Number(res.lastInsertRowid);
     }
-    const ins = db.prepare(
-      `INSERT INTO program_exercises
-       (program_id, exercise_id, position, superset_group, target_sets, target_reps, rest_seconds)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    );
-    data.items.forEach((it, i) => {
-      ins.run(
-        programId,
-        it.exercise_id,
-        i,
-        it.superset_group,
-        Math.max(1, it.target_sets || 3),
-        it.target_reps.trim() || '8',
-        Math.max(0, it.rest_seconds || 180)
-      );
-    });
-  });
-
-  try {
-    tx();
+    for (let i = 0; i < data.items.length; i++) {
+      const it = data.items[i];
+      await trx.execute({
+        sql: `INSERT INTO program_exercises
+              (program_id, exercise_id, position, superset_group, target_sets, target_reps, rest_seconds)
+              VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          programId,
+          it.exercise_id,
+          i,
+          it.superset_group,
+          Math.max(1, it.target_sets || 3),
+          it.target_reps.trim() || '8',
+          Math.max(0, it.rest_seconds || 180)
+        ]
+      });
+    }
+    await trx.commit();
   } catch {
     return { error: 'Не получилось сохранить программу' };
+  } finally {
+    trx.close();
   }
   revalidatePath('/programs');
   revalidatePath('/dashboard');
@@ -153,7 +168,7 @@ export async function saveProgramAction(data: ProgramPayload) {
 
 export async function deleteProgramAction(id: number) {
   const user = await requireUser();
-  db.prepare('DELETE FROM programs WHERE id = ? AND user_id = ?').run(id, user.id);
+  await run('DELETE FROM programs WHERE id = ? AND user_id = ?', [id, user.id]);
   revalidatePath('/programs');
   revalidatePath('/dashboard');
   return { ok: true };
@@ -167,40 +182,40 @@ export async function scheduleWorkoutAction(data: { date: string; programId: num
 
   let name = 'Тренировка';
   if (data.programId) {
-    const p = db
-      .prepare('SELECT id, name FROM programs WHERE id = ? AND user_id = ?')
-      .get(data.programId, user.id) as { id: number; name: string } | undefined;
+    const p = await get<{ id: number; name: string }>(
+      'SELECT id, name FROM programs WHERE id = ? AND user_id = ?',
+      [data.programId, user.id]
+    );
     if (!p) return { error: 'Программа не найдена' };
     name = p.name;
   }
-  const res = db
-    .prepare(
-      `INSERT INTO workouts (user_id, program_id, name, status, scheduled_for, created_at)
-       VALUES (?, ?, ?, 'scheduled', ?, ?)`
-    )
-    .run(user.id, data.programId, name, data.date, now());
-  if (data.programId) snapshotProgramToWorkout(data.programId, Number(res.lastInsertRowid));
+  const res = await run(
+    `INSERT INTO workouts (user_id, program_id, name, status, scheduled_for, created_at)
+     VALUES (?, ?, ?, 'scheduled', ?, ?)`,
+    [user.id, data.programId, name, data.date, now()]
+  );
+  if (data.programId) await snapshotProgramToWorkout(data.programId, res.lastInsertRowid);
   revalidateAll();
   return { ok: true };
 }
 
 async function createAndStart(userId: number, programId: number | null, name: string): Promise<number> {
-  const res = db
-    .prepare(
-      `INSERT INTO workouts (user_id, program_id, name, status, started_at, created_at)
-       VALUES (?, ?, ?, 'active', ?, ?)`
-    )
-    .run(userId, programId, name, now(), now());
-  const id = Number(res.lastInsertRowid);
-  if (programId) snapshotProgramToWorkout(programId, id);
+  const res = await run(
+    `INSERT INTO workouts (user_id, program_id, name, status, started_at, created_at)
+     VALUES (?, ?, ?, 'active', ?, ?)`,
+    [userId, programId, name, now(), now()]
+  );
+  const id = res.lastInsertRowid;
+  if (programId) await snapshotProgramToWorkout(programId, id);
   return id;
 }
 
 export async function startProgramNowAction(programId: number) {
   const user = await requireUser();
-  const p = db
-    .prepare('SELECT id, name FROM programs WHERE id = ? AND user_id = ?')
-    .get(programId, user.id) as { id: number; name: string } | undefined;
+  const p = await get<{ id: number; name: string }>(
+    'SELECT id, name FROM programs WHERE id = ? AND user_id = ?',
+    [programId, user.id]
+  );
   if (!p) return { error: 'Программа не найдена' };
   const id = await createAndStart(user.id, p.id, p.name);
   revalidateAll(id);
@@ -216,52 +231,51 @@ export async function startEmptyWorkoutAction() {
 
 export async function startWorkoutAction(workoutId: number) {
   const user = await requireUser();
-  db.prepare(
-    "UPDATE workouts SET status = 'active', started_at = ? WHERE id = ? AND user_id = ? AND status = 'scheduled'"
-  ).run(now(), workoutId, user.id);
+  await run(
+    "UPDATE workouts SET status = 'active', started_at = ? WHERE id = ? AND user_id = ? AND status = 'scheduled'",
+    [now(), workoutId, user.id]
+  );
   revalidateAll(workoutId);
   return { ok: true };
 }
 
 export async function finishWorkoutAction(workoutId: number) {
   const user = await requireUser();
-  db.prepare(
-    "UPDATE workouts SET status = 'finished', finished_at = ? WHERE id = ? AND user_id = ? AND status = 'active'"
-  ).run(now(), workoutId, user.id);
+  await run(
+    "UPDATE workouts SET status = 'finished', finished_at = ? WHERE id = ? AND user_id = ? AND status = 'active'",
+    [now(), workoutId, user.id]
+  );
   revalidateAll(workoutId);
   return { ok: true };
 }
 
 export async function deleteWorkoutAction(workoutId: number) {
   const user = await requireUser();
-  db.prepare('DELETE FROM workouts WHERE id = ? AND user_id = ?').run(workoutId, user.id);
+  await run('DELETE FROM workouts WHERE id = ? AND user_id = ?', [workoutId, user.id]);
   revalidateAll();
   redirect('/workouts');
 }
 
 export async function cancelScheduledAction(workoutId: number) {
   const user = await requireUser();
-  db.prepare("DELETE FROM workouts WHERE id = ? AND user_id = ? AND status = 'scheduled'").run(
+  await run("DELETE FROM workouts WHERE id = ? AND user_id = ? AND status = 'scheduled'", [
     workoutId,
     user.id
-  );
+  ]);
   revalidateAll();
   redirect('/calendar');
 }
 
 /* ----------------------- Workout exercises ----------------------- */
 
-function ownedWorkoutExercise(weId: number, userId: number) {
-  return db
-    .prepare(
-      `SELECT we.id, we.workout_id, we.position, we.superset_group
-       FROM workout_exercises we
-       JOIN workouts w ON w.id = we.workout_id
-       WHERE we.id = ? AND w.user_id = ?`
-    )
-    .get(weId, userId) as
-    | { id: number; workout_id: number; position: number; superset_group: number | null }
-    | undefined;
+async function ownedWorkoutExercise(weId: number, userId: number) {
+  return get<{ id: number; workout_id: number; position: number; superset_group: number | null }>(
+    `SELECT we.id, we.workout_id, we.position, we.superset_group
+     FROM workout_exercises we
+     JOIN workouts w ON w.id = we.workout_id
+     WHERE we.id = ? AND w.user_id = ?`,
+    [weId, userId]
+  );
 }
 
 export async function addExerciseToWorkoutAction(data: {
@@ -270,38 +284,39 @@ export async function addExerciseToWorkoutAction(data: {
   supersetWithPrev: boolean;
 }) {
   const user = await requireUser();
-  const w = db
-    .prepare('SELECT id FROM workouts WHERE id = ? AND user_id = ?')
-    .get(data.workoutId, user.id);
+  const w = await get<{ id: number }>('SELECT id FROM workouts WHERE id = ? AND user_id = ?', [
+    data.workoutId,
+    user.id
+  ]);
   if (!w) return { error: 'Тренировка не найдена' };
 
-  const last = db
-    .prepare(
-      'SELECT id, position, superset_group FROM workout_exercises WHERE workout_id = ? ORDER BY position DESC LIMIT 1'
-    )
-    .get(data.workoutId) as { id: number; position: number; superset_group: number | null } | undefined;
+  const last = await get<{ id: number; position: number; superset_group: number | null }>(
+    'SELECT id, position, superset_group FROM workout_exercises WHERE workout_id = ? ORDER BY position DESC LIMIT 1',
+    [data.workoutId]
+  );
 
   let group: number | null = null;
   if (data.supersetWithPrev && last) {
     if (last.superset_group != null) {
       group = last.superset_group;
     } else {
-      const maxGroup = (
-        db
-          .prepare(
-            'SELECT COALESCE(MAX(superset_group), 0) AS m FROM workout_exercises WHERE workout_id = ?'
+      const maxGroup =
+        (
+          await get<{ m: number }>(
+            'SELECT COALESCE(MAX(superset_group), 0) AS m FROM workout_exercises WHERE workout_id = ?',
+            [data.workoutId]
           )
-          .get(data.workoutId) as { m: number }
-      ).m;
+        )?.m ?? 0;
       group = maxGroup + 1;
-      db.prepare('UPDATE workout_exercises SET superset_group = ? WHERE id = ?').run(group, last.id);
+      await run('UPDATE workout_exercises SET superset_group = ? WHERE id = ?', [group, last.id]);
     }
   }
 
-  db.prepare(
+  await run(
     `INSERT INTO workout_exercises (workout_id, exercise_id, position, superset_group, target_sets, target_reps, rest_seconds)
-     VALUES (?, ?, ?, ?, NULL, NULL, 180)`
-  ).run(data.workoutId, data.exerciseId, (last?.position ?? -1) + 1, group);
+     VALUES (?, ?, ?, ?, NULL, NULL, 180)`,
+    [data.workoutId, data.exerciseId, (last?.position ?? -1) + 1, group]
+  );
 
   revalidatePath(`/workouts/${data.workoutId}`);
   return { ok: true };
@@ -309,21 +324,18 @@ export async function addExerciseToWorkoutAction(data: {
 
 export async function setExerciseFinishedAction(weId: number, finished: boolean) {
   const user = await requireUser();
-  const we = ownedWorkoutExercise(weId, user.id);
+  const we = await ownedWorkoutExercise(weId, user.id);
   if (!we) return { error: 'Не найдено' };
-  db.prepare('UPDATE workout_exercises SET finished_at = ? WHERE id = ?').run(
-    finished ? now() : null,
-    weId
-  );
+  await run('UPDATE workout_exercises SET finished_at = ? WHERE id = ?', [finished ? now() : null, weId]);
   revalidatePath(`/workouts/${we.workout_id}`);
   return { ok: true };
 }
 
 export async function removeWorkoutExerciseAction(weId: number) {
   const user = await requireUser();
-  const we = ownedWorkoutExercise(weId, user.id);
+  const we = await ownedWorkoutExercise(weId, user.id);
   if (!we) return { error: 'Не найдено' };
-  db.prepare('DELETE FROM workout_exercises WHERE id = ?').run(weId);
+  await run('DELETE FROM workout_exercises WHERE id = ?', [weId]);
   revalidatePath(`/workouts/${we.workout_id}`);
   return { ok: true };
 }
@@ -332,21 +344,23 @@ export async function removeWorkoutExerciseAction(weId: number) {
 
 export async function addSetAction(data: { weId: number; reps: number; weight: number }) {
   const user = await requireUser();
-  const we = ownedWorkoutExercise(data.weId, user.id);
+  const we = await ownedWorkoutExercise(data.weId, user.id);
   if (!we) return { error: 'Не найдено' };
   if (!Number.isFinite(data.reps) || data.reps <= 0) return { error: 'Укажи количество повторов' };
   const weight = Number.isFinite(data.weight) && data.weight >= 0 ? data.weight : 0;
 
   const next =
     ((
-      db
-        .prepare('SELECT COALESCE(MAX(set_number), 0) AS m FROM sets WHERE workout_exercise_id = ?')
-        .get(data.weId) as { m: number }
-    ).m ?? 0) + 1;
+      await get<{ m: number }>(
+        'SELECT COALESCE(MAX(set_number), 0) AS m FROM sets WHERE workout_exercise_id = ?',
+        [data.weId]
+      )
+    )?.m ?? 0) + 1;
 
-  db.prepare(
-    'INSERT INTO sets (workout_exercise_id, set_number, reps, weight, completed_at) VALUES (?, ?, ?, ?, ?)'
-  ).run(data.weId, next, Math.round(data.reps), weight, now());
+  await run(
+    'INSERT INTO sets (workout_exercise_id, set_number, reps, weight, completed_at) VALUES (?, ?, ?, ?, ?)',
+    [data.weId, next, Math.round(data.reps), weight, now()]
+  );
 
   revalidatePath(`/workouts/${we.workout_id}`);
   return { ok: true };
@@ -354,27 +368,31 @@ export async function addSetAction(data: { weId: number; reps: number; weight: n
 
 export async function deleteSetAction(setId: number) {
   const user = await requireUser();
-  const row = db
-    .prepare(
-      `SELECT s.id, s.workout_exercise_id, we.workout_id
-       FROM sets s
-       JOIN workout_exercises we ON we.id = s.workout_exercise_id
-       JOIN workouts w ON w.id = we.workout_id
-       WHERE s.id = ? AND w.user_id = ?`
-    )
-    .get(setId, user.id) as { id: number; workout_exercise_id: number; workout_id: number } | undefined;
+  const row = await get<{ id: number; workout_exercise_id: number; workout_id: number }>(
+    `SELECT s.id, s.workout_exercise_id, we.workout_id
+     FROM sets s
+     JOIN workout_exercises we ON we.id = s.workout_exercise_id
+     JOIN workouts w ON w.id = we.workout_id
+     WHERE s.id = ? AND w.user_id = ?`,
+    [setId, user.id]
+  );
   if (!row) return { error: 'Не найдено' };
 
-  const tx = db.transaction(() => {
-    db.prepare('DELETE FROM sets WHERE id = ?').run(setId);
-    const rest = db
-      .prepare('SELECT id FROM sets WHERE workout_exercise_id = ? ORDER BY set_number')
-      .all(row.workout_exercise_id) as Array<{ id: number }>;
-    rest.forEach((s, i) =>
-      db.prepare('UPDATE sets SET set_number = ? WHERE id = ?').run(i + 1, s.id)
-    );
-  });
-  tx();
+  // Выжившие подходы читаем заранее, удаление + перенумерация — одним атомарным batch.
+  const rest = await all<{ id: number }>(
+    'SELECT id FROM sets WHERE workout_exercise_id = ? AND id != ? ORDER BY set_number',
+    [row.workout_exercise_id, setId]
+  );
+  await (await getDb()).batch(
+    [
+      { sql: 'DELETE FROM sets WHERE id = ?', args: [setId] },
+      ...rest.map((s, i) => ({
+        sql: 'UPDATE sets SET set_number = ? WHERE id = ?',
+        args: [i + 1, s.id]
+      }))
+    ],
+    'write'
+  );
 
   revalidatePath(`/workouts/${row.workout_id}`);
   return { ok: true };
@@ -393,24 +411,25 @@ export async function addMeasurementAction(data: {
   const hasAny = Object.values(v).some((x) => x != null);
   if (!hasAny) return { error: 'Заполни хотя бы одно поле' };
 
-  db.prepare(
+  await run(
     `INSERT INTO measurements (user_id, date, weight, neck, shoulders, chest, waist, hips, biceps, forearm, thigh, calf, notes, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    user.id,
-    data.date,
-    v.weight ?? null,
-    v.neck ?? null,
-    v.shoulders ?? null,
-    v.chest ?? null,
-    v.waist ?? null,
-    v.hips ?? null,
-    v.biceps ?? null,
-    v.forearm ?? null,
-    v.thigh ?? null,
-    v.calf ?? null,
-    data.notes.trim() || null,
-    now()
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      user.id,
+      data.date,
+      v.weight ?? null,
+      v.neck ?? null,
+      v.shoulders ?? null,
+      v.chest ?? null,
+      v.waist ?? null,
+      v.hips ?? null,
+      v.biceps ?? null,
+      v.forearm ?? null,
+      v.thigh ?? null,
+      v.calf ?? null,
+      data.notes.trim() || null,
+      now()
+    ]
   );
   revalidatePath('/measurements');
   revalidatePath('/stats');
@@ -419,7 +438,7 @@ export async function addMeasurementAction(data: {
 
 export async function deleteMeasurementAction(id: number) {
   const user = await requireUser();
-  db.prepare('DELETE FROM measurements WHERE id = ? AND user_id = ?').run(id, user.id);
+  await run('DELETE FROM measurements WHERE id = ? AND user_id = ?', [id, user.id]);
   revalidatePath('/measurements');
   revalidatePath('/stats');
   return { ok: true };

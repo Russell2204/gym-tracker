@@ -1,17 +1,21 @@
 import Link from 'next/link';
+import { Plus, Repeat } from 'lucide-react';
 import { requireUser } from '@/lib/auth';
 import { getPrograms } from '@/lib/queries';
 import ProgramCardActions from '@/components/ProgramCardActions';
 
 export default async function ProgramsPage() {
   const user = await requireUser();
-  const programs = getPrograms(user.id);
+  const programs = await getPrograms(user.id);
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Программы</h1>
-        <Link href="/programs/new" className="btn-primary">+ Создать</Link>
+        <Link href="/programs/new" className="btn-primary">
+          <Plus size={16} />
+          Создать
+        </Link>
       </div>
 
       {programs.length === 0 && (
@@ -22,7 +26,7 @@ export default async function ProgramsPage() {
 
       <div className="space-y-3">
         {programs.map((p) => (
-          <div key={p.id} className="card p-4">
+          <div key={p.id} className="card-hover p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="font-semibold">{p.name}</div>
@@ -37,7 +41,9 @@ export default async function ProgramsPage() {
                   className="rounded-lg border border-line px-2 py-1 text-xs text-mut"
                 >
                   {it.exercise_name} · {it.target_sets}×{it.target_reps}
-                  {it.superset_group != null && <span className="ml-1 text-warn">⇄</span>}
+                  {it.superset_group != null && (
+                    <Repeat size={11} className="ml-1 inline text-warn" aria-label="суперсет" />
+                  )}
                 </span>
               ))}
             </div>

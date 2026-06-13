@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Mail, Lock, User, ArrowLeft } from 'lucide-react';
 import { loginAction, registerAction } from '@/lib/actions';
 
 export default function AuthForm({ mode }: { mode: 'login' | 'register' }) {
@@ -26,16 +28,29 @@ export default function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center px-4">
+    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-hero-radial px-4">
       <div className="w-full max-w-sm">
+        <Link
+          href="/"
+          className="mb-6 inline-flex items-center gap-1.5 text-sm text-mut transition-colors hover:text-ink"
+        >
+          <ArrowLeft size={15} />
+          На главную
+        </Link>
+
         <div className="mb-8 text-center">
           <div className="font-display text-3xl font-bold tracking-tight">
-            IRON<span className="text-acc">LOG</span>
+            IRON<span className="text-gradient">LOG</span>
           </div>
           <p className="mt-2 text-sm text-mut">Дневник тренировок: вес, повторы, прогресс</p>
         </div>
 
-        <div className="card p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, ease: [0.21, 0.65, 0.36, 1] }}
+          className="card bg-card-sheen p-6 shadow-glow"
+        >
           <h1 className="mb-5 text-lg font-semibold">
             {isLogin ? 'Вход в аккаунт' : 'Регистрация'}
           </h1>
@@ -44,53 +59,69 @@ export default function AuthForm({ mode }: { mode: 'login' | 'register' }) {
             {!isLogin && (
               <div>
                 <label className="label" htmlFor="name">Имя</label>
-                <input
-                  id="name"
-                  className="input"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Как к тебе обращаться"
-                  autoComplete="name"
-                />
+                <div className="relative">
+                  <User size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-mut" />
+                  <input
+                    id="name"
+                    className="input !pl-9"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Как к тебе обращаться"
+                    autoComplete="name"
+                  />
+                </div>
               </div>
             )}
             <div>
               <label className="label" htmlFor="email">Email</label>
-              <input
-                id="email"
-                className="input"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                autoComplete="email"
-              />
+              <div className="relative">
+                <Mail size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-mut" />
+                <input
+                  id="email"
+                  className="input !pl-9"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                />
+              </div>
             </div>
             <div>
               <label className="label" htmlFor="password">Пароль</label>
-              <input
-                id="password"
-                className="input"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={isLogin ? 'Твой пароль' : 'Минимум 6 символов'}
-                autoComplete={isLogin ? 'current-password' : 'new-password'}
-                onKeyDown={(e) => e.key === 'Enter' && submit()}
-              />
+              <div className="relative">
+                <Lock size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-mut" />
+                <input
+                  id="password"
+                  className="input !pl-9"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={isLogin ? 'Твой пароль' : 'Минимум 6 символов'}
+                  autoComplete={isLogin ? 'current-password' : 'new-password'}
+                  onKeyDown={(e) => e.key === 'Enter' && submit()}
+                />
+              </div>
             </div>
 
-            {error && (
-              <p className="rounded-xl border border-hot/40 bg-hot/10 px-3 py-2 text-sm text-hot">
-                {error}
-              </p>
-            )}
+            <AnimatePresence>
+              {error && (
+                <motion.p
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden rounded-xl border border-hot/40 bg-hot/10 px-3 py-2 text-sm text-hot"
+                >
+                  {error}
+                </motion.p>
+              )}
+            </AnimatePresence>
 
             <button className="btn-primary w-full" onClick={submit} disabled={pending}>
               {pending ? 'Секунду…' : isLogin ? 'Войти' : 'Создать аккаунт'}
             </button>
           </div>
-        </div>
+        </motion.div>
 
         <p className="mt-4 text-center text-sm text-mut">
           {isLogin ? (

@@ -18,7 +18,8 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
+  // Корень — публичный лендинг (строго по равенству, иначе откроется всё).
+  const isPublic = pathname === '/' || PUBLIC_PATHS.some((p) => pathname.startsWith(p));
 
   if (!authed && !isPublic) {
     return NextResponse.redirect(new URL('/login', req.url));

@@ -1,9 +1,6 @@
-import type Database from 'better-sqlite3';
+import { createClient, type Client, type InArgs } from '@libsql/client';
 import path from 'path';
 import fs from 'fs';
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const loadDriver = () => require('better-sqlite3') as typeof import('better-sqlite3');
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -89,7 +86,7 @@ CREATE INDEX IF NOT EXISTS idx_sets_we ON sets(workout_exercise_id);
 CREATE INDEX IF NOT EXISTS idx_workouts_user ON workouts(user_id, status);
 `;
 
-const BUILTIN_EXERCISES: Array<[string, string]> = [
+export const BUILTIN_EXERCISES: Array<[string, string]> = [
   ['Приседания со штангой', 'Ноги'],
   ['Становая тяга', 'Спина'],
   ['Жим штанги лёжа', 'Грудь'],
@@ -106,67 +103,84 @@ const BUILTIN_EXERCISES: Array<[string, string]> = [
   ['Подъёмы на носки стоя', 'Ноги']
 ];
 
-function init(): Database.Database {
-  const BetterSqlite3 = loadDriver();
-  const dir = path.join(process.cwd(), 'data');
-  fs.mkdirSync(dir, { recursive: true });
-  const db = new BetterSqlite3(path.join(dir, 'gym.db'));
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  db.exec(SCHEMA);
+export { SCHEMA };
 
-  const count = (db.prepare('SELECT COUNT(*) AS c FROM exercises WHERE user_id IS NULL').get() as { c: number }).c;
-  if (count === 0) {
-    const ins = db.prepare(
-      "INSERT INTO exercises (user_id, name, muscle_group, created_at) VALUES (NULL, ?, ?, ?)"
-    );
-    const now = new Date().toISOString();
-    const tx = db.transaction(() => {
-      for (const [name, group] of BUILTIN_EXERCISES) ins.run(name, group, now);
-    });
-    tx();
+async function init(): Promise<Client> {
+  const url = process.env.TURSO_DATABASE_URL || 'file:data/gym.db';
+  if (process.env.VERCEL && !process.env.TURSO_DATABASE_URL) {
+    throw new Error('TURSO_DATABASE_URL обязателен в продакшене: файловая SQLite на Vercel не сохраняет данные');
   }
-  return db;
-}
+  if (url.startsWith('file:')) {
+    fs.mkdirSync(path.join(process.cwd(), 'data'), { recursive: true });
+  }
+  const client = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN, intMode: 'number' });
+  // Turso включает foreign keys на сервере; PRAGMA нужна локальному файловому клиенту.
+  if (url.startsWith('file:')) await client.execute('PRAGMA foreign_keys = ON');
+  await client.executeMultiple(SCHEMA);
 
-const g = globalThis as unknown as { __gymdb?: Database.Database };
-
-function getDb(): Database.Database {
-  if (!g.__gymdb) g.__gymdb = init();
-  return g.__gymdb;
+  const count = Number(
+    (await client.execute('SELECT COUNT(*) AS c FROM exercises WHERE user_id IS NULL')).rows[0].c
+  );
+  if (count === 0) {
+    const now = new Date().toISOString();
+    await client.batch(
+      BUILTIN_EXERCISES.map(([name, group]) => ({
+        sql: 'INSERT INTO exercises (user_id, name, muscle_group, created_at) VALUES (NULL, ?, ?, ?)',
+        args: [name, group, now]
+      })),
+      'write'
+    );
+  }
+  return client;
 }
 
 /**
- * Ленивый синглтон: нативный модуль грузится при первом обращении,
- * а не при импорте файла — так `next build` не требует собранных биндингов.
+ * Ленивый синглтон: промис кладётся в globalThis, чтобы пережить HMR
+ * и разделить инициализацию между конкурентными запросами.
+ * При ошибке init слот очищается — следующий запрос попробует снова.
  */
-export const db: Database.Database = new Proxy({} as Database.Database, {
-  get(_t, prop) {
-    const real = getDb() as unknown as Record<PropertyKey, unknown>;
-    const value = real[prop];
-    return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(real) : value;
-  }
-});
+const g = globalThis as unknown as { __gymdb?: Promise<Client> };
 
-function exerciseIdByName(name: string): number | null {
-  const row = db.prepare('SELECT id FROM exercises WHERE user_id IS NULL AND name = ?').get(name) as
-    | { id: number }
-    | undefined;
-  return row?.id ?? null;
+export function getDb(): Promise<Client> {
+  if (!g.__gymdb) {
+    g.__gymdb = init().catch((e) => {
+      g.__gymdb = undefined;
+      throw e;
+    });
+  }
+  return g.__gymdb;
+}
+
+/* Хелперы: единственное место, где живут Row-объекты и bigint из libsql.
+   Ряды разворачиваются в плоские объекты (важно для сериализации в RSC-пропсы). */
+
+export async function all<T>(sql: string, args: InArgs = []): Promise<T[]> {
+  const rs = await (await getDb()).execute({ sql, args });
+  return rs.rows.map((r) => ({ ...r })) as T[];
+}
+
+export async function get<T>(sql: string, args: InArgs = []): Promise<T | undefined> {
+  return (await all<T>(sql, args))[0];
+}
+
+export async function run(
+  sql: string,
+  args: InArgs = []
+): Promise<{ lastInsertRowid: number; changes: number }> {
+  const rs = await (await getDb()).execute({ sql, args });
+  return { lastInsertRowid: Number(rs.lastInsertRowid ?? 0), changes: rs.rowsAffected };
 }
 
 /** Стартовая программа для нового пользователя — фуллбади раз в неделю. */
-export function createDefaultProgram(userId: number) {
+export async function createDefaultProgram(userId: number) {
   const now = new Date().toISOString();
-  const res = db
-    .prepare('INSERT INTO programs (user_id, name, description, created_at) VALUES (?, ?, ?, ?)')
-    .run(
-      userId,
-      'Фуллбади · воскресенье',
-      'Тяжёлая база раз в неделю: присед, жим, тяга + подсобка на спину, руки и плечи.',
-      now
-    );
-  const programId = Number(res.lastInsertRowid);
+  const res = await run('INSERT INTO programs (user_id, name, description, created_at) VALUES (?, ?, ?, ?)', [
+    userId,
+    'Фуллбади · воскресенье',
+    'Тяжёлая база раз в неделю: присед, жим, тяга + подсобка на спину, руки и плечи.',
+    now
+  ]);
+  const programId = res.lastInsertRowid;
 
   const items: Array<[string, number, string, number, number | null]> = [
     ['Приседания со штангой', 4, '6', 240, null],
@@ -178,37 +192,45 @@ export function createDefaultProgram(userId: number) {
     ['Махи гантелей в стороны', 2, '15', 60, null]
   ];
 
-  const ins = db.prepare(
-    `INSERT INTO program_exercises
-     (program_id, exercise_id, position, superset_group, target_sets, target_reps, rest_seconds)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  const builtins = await all<{ id: number; name: string }>(
+    'SELECT id, name FROM exercises WHERE user_id IS NULL'
   );
-  items.forEach(([name, sets, reps, rest, group], i) => {
-    const exId = exerciseIdByName(name);
-    if (exId) ins.run(programId, exId, i, group, sets, reps, rest);
+  const idByName = new Map(builtins.map((e) => [e.name, e.id]));
+
+  const stmts = items.flatMap(([name, sets, reps, rest, group], i) => {
+    const exId = idByName.get(name);
+    if (!exId) return [];
+    return [
+      {
+        sql: `INSERT INTO program_exercises
+              (program_id, exercise_id, position, superset_group, target_sets, target_reps, rest_seconds)
+              VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        args: [programId, exId, i, group, sets, reps, rest]
+      }
+    ];
   });
+  if (stmts.length > 0) await (await getDb()).batch(stmts, 'write');
 }
 
 /** Копирует упражнения программы в тренировку (снимок на момент создания). */
-export function snapshotProgramToWorkout(programId: number, workoutId: number) {
-  const items = db
-    .prepare('SELECT * FROM program_exercises WHERE program_id = ? ORDER BY position')
-    .all(programId) as Array<{
+export async function snapshotProgramToWorkout(programId: number, workoutId: number) {
+  const items = await all<{
     exercise_id: number;
     position: number;
     superset_group: number | null;
     target_sets: number;
     target_reps: string;
     rest_seconds: number;
-  }>;
-  const ins = db.prepare(
-    `INSERT INTO workout_exercises
-     (workout_id, exercise_id, position, superset_group, target_sets, target_reps, rest_seconds)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  }>('SELECT * FROM program_exercises WHERE program_id = ? ORDER BY position', [programId]);
+  if (items.length === 0) return;
+
+  await (await getDb()).batch(
+    items.map((it) => ({
+      sql: `INSERT INTO workout_exercises
+            (workout_id, exercise_id, position, superset_group, target_sets, target_reps, rest_seconds)
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      args: [workoutId, it.exercise_id, it.position, it.superset_group, it.target_sets, it.target_reps, it.rest_seconds]
+    })),
+    'write'
   );
-  const tx = db.transaction(() => {
-    for (const it of items)
-      ins.run(workoutId, it.exercise_id, it.position, it.superset_group, it.target_sets, it.target_reps, it.rest_seconds);
-  });
-  tx();
 }

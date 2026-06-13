@@ -4,6 +4,6 @@ import ProgramBuilder from '@/components/ProgramBuilder';
 
 export default async function NewProgramPage() {
   const user = await requireUser();
-  const catalog = getExercises(user.id);
+  const catalog = await getExercises(user.id);
   return <ProgramBuilder catalog={catalog} />;
 }

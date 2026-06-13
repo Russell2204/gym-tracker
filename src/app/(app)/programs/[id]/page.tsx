@@ -7,8 +7,7 @@ export default async function EditProgramPage({ params }: { params: { id: string
   const user = await requireUser();
   const id = Number(params.id);
   if (!Number.isInteger(id)) notFound();
-  const program = getProgram(id, user.id);
+  const [program, catalog] = await Promise.all([getProgram(id, user.id), getExercises(user.id)]);
   if (!program) notFound();
-  const catalog = getExercises(user.id);
   return <ProgramBuilder catalog={catalog} initial={program} />;
 }

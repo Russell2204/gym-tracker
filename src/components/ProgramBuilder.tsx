@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowUp, ArrowDown, X, Save } from 'lucide-react';
 import { saveProgramAction } from '@/lib/actions';
 import { Exercise, Program } from '@/lib/types';
 
@@ -126,8 +128,17 @@ export default function ProgramBuilder({
       </div>
 
       <div className="space-y-3">
+        <AnimatePresence initial={false}>
         {rows.map((row, i) => (
-          <div key={row.key} className="card p-4">
+          <motion.div
+            key={row.key}
+            layout
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={{ duration: 0.2 }}
+            className="card p-4"
+          >
             <div className="flex items-start justify-between gap-2">
               <div className="font-medium">
                 <span className="mr-2 text-mut">{i + 1}.</span>
@@ -139,9 +150,15 @@ export default function ProgramBuilder({
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                <button className="btn-ghost h-9 w-9 !p-0" onClick={() => move(i, -1)} aria-label="Выше">↑</button>
-                <button className="btn-ghost h-9 w-9 !p-0" onClick={() => move(i, 1)} aria-label="Ниже">↓</button>
-                <button className="btn-ghost h-9 w-9 !p-0 text-hot" onClick={() => remove(row.key)} aria-label="Убрать">✕</button>
+                <button className="btn-ghost h-9 w-9 !p-0" onClick={() => move(i, -1)} aria-label="Выше">
+                  <ArrowUp size={15} />
+                </button>
+                <button className="btn-ghost h-9 w-9 !p-0" onClick={() => move(i, 1)} aria-label="Ниже">
+                  <ArrowDown size={15} />
+                </button>
+                <button className="btn-ghost h-9 w-9 !p-0 text-hot hover:border-hot/50" onClick={() => remove(row.key)} aria-label="Убрать">
+                  <X size={15} />
+                </button>
               </div>
             </div>
 
@@ -192,8 +209,9 @@ export default function ProgramBuilder({
                 </select>
               </div>
             </div>
-          </div>
+          </motion.div>
         ))}
+        </AnimatePresence>
       </div>
 
       <div className="card p-4">
@@ -224,6 +242,7 @@ export default function ProgramBuilder({
       )}
 
       <button className="btn-primary w-full" onClick={save} disabled={pending}>
+        <Save size={16} />
         {pending ? 'Сохраняю…' : 'Сохранить программу'}
       </button>
     </div>

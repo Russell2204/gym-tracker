@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Trophy, TrendingUp, TrendingDown, Trash2 } from 'lucide-react';
 import { deleteWorkoutAction } from '@/lib/actions';
 import { WorkoutDetail, fmtDate, fmtDuration, fmtKg, plural } from '@/lib/types';
 
@@ -33,7 +34,10 @@ export default function WorkoutSummary({ workout }: { workout: WorkoutDetail }) 
   return (
     <div className="space-y-5">
       <div>
-        <div className="text-xs font-medium uppercase tracking-wide text-ok">Завершена</div>
+        <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-ok">
+          <Trophy size={13} />
+          Завершена
+        </div>
         <h1 className="mt-1 text-xl font-semibold">{workout.name}</h1>
         <p className="mt-1 text-sm text-mut">
           {workout.finished_at && fmtDate(workout.finished_at, true)}
@@ -43,15 +47,16 @@ export default function WorkoutSummary({ workout }: { workout: WorkoutDetail }) 
         </p>
       </div>
 
-      <div className="card p-4">
+      <div className="card bg-card-sheen p-4">
         <div className="text-xs text-mut">Тоннаж за тренировку</div>
         <div className="num mt-1 text-3xl font-bold">
-          {fmtKg(totalVolume)} <span className="text-base font-medium text-mut">кг</span>
+          <span className="text-gradient">{fmtKg(totalVolume)}</span>{' '}
+          <span className="text-base font-medium text-mut">кг</span>
         </div>
         {volumeDelta != null && (
-          <div className={'mt-1 text-sm font-semibold ' + (volumeDelta >= 0 ? 'text-ok' : 'text-hot')}>
-            {volumeDelta >= 0 ? '▲' : '▼'} {fmtKg(Math.abs(volumeDelta))} кг к прошлой тренировке (
-            {fmtDate(prev!.finished_at)})
+          <div className={'mt-1 flex items-center gap-1 text-sm font-semibold ' + (volumeDelta >= 0 ? 'text-ok' : 'text-hot')}>
+            {volumeDelta >= 0 ? <TrendingUp size={15} /> : <TrendingDown size={15} />}
+            {fmtKg(Math.abs(volumeDelta))} кг к прошлой тренировке ({fmtDate(prev!.finished_at)})
           </div>
         )}
       </div>
@@ -103,6 +108,7 @@ export default function WorkoutSummary({ workout }: { workout: WorkoutDetail }) 
       </div>
 
       <button className="btn-danger-ghost w-full" onClick={remove} disabled={pending}>
+        <Trash2 size={16} />
         Удалить тренировку
       </button>
     </div>

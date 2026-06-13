@@ -11,11 +11,11 @@ export default async function WorkoutPage({ params }: { params: { id: string } }
   const id = Number(params.id);
   if (!Number.isInteger(id)) notFound();
 
-  const workout = getWorkoutDetail(id, user.id);
+  const workout = await getWorkoutDetail(id, user.id);
   if (!workout) notFound();
 
   if (workout.status === 'active') {
-    const catalog = getExercises(user.id).map((e) => ({
+    const catalog = (await getExercises(user.id)).map((e) => ({
       id: e.id,
       name: e.name,
       muscle_group: e.muscle_group

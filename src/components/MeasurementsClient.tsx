@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Ruler, Save, Trash2 } from 'lucide-react';
 import { addMeasurementAction, deleteMeasurementAction } from '@/lib/actions';
 import { Measurement, fmtDate, todayLocalISO } from '@/lib/types';
 
@@ -54,7 +55,10 @@ export default function MeasurementsClient({ measurements }: { measurements: Mea
 
   return (
     <div className="space-y-5">
-      <h1 className="text-xl font-semibold">Замеры тела</h1>
+      <h1 className="flex items-center gap-2 text-xl font-semibold">
+        <Ruler size={20} className="text-acc" />
+        Замеры тела
+      </h1>
 
       <div className="card space-y-4 p-4">
         <div>
@@ -100,6 +104,7 @@ export default function MeasurementsClient({ measurements }: { measurements: Mea
         {error && <p className="text-sm text-hot">{error}</p>}
 
         <button className="btn-primary w-full" onClick={save} disabled={pending}>
+          <Save size={16} />
           {pending ? 'Сохраняю…' : 'Сохранить замер'}
         </button>
         <p className="text-xs text-mut">Обхваты — в сантиметрах. Заполняй только то, что мерил: пустые поля не сохраняются.</p>
@@ -121,10 +126,11 @@ export default function MeasurementsClient({ measurements }: { measurements: Mea
                 <div className="flex items-center justify-between gap-3">
                   <div className="font-medium">{fmtDate(m.date, true)}</div>
                   <button
-                    className="text-sm text-mut transition-colors hover:text-hot"
+                    className="text-mut transition-colors hover:text-hot"
                     onClick={() => remove(m.id)}
+                    aria-label="Удалить замер"
                   >
-                    Удалить
+                    <Trash2 size={16} />
                   </button>
                 </div>
                 <div className="num mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">

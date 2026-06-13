@@ -3,6 +3,8 @@
 import { useMemo, useState } from 'react';
 import {
   ResponsiveContainer,
+  AreaChart,
+  Area,
   LineChart,
   Line,
   XAxis,
@@ -60,7 +62,17 @@ export default function StatsCharts({
         ) : (
           <div className="mt-3 h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={volumeData} margin={{ top: 5, right: 5, bottom: 0, left: -10 }}>
+              <AreaChart data={volumeData} margin={{ top: 5, right: 5, bottom: 0, left: -10 }}>
+                <defs>
+                  <linearGradient id="volStroke" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#4e7dff" />
+                    <stop offset="100%" stopColor="#8b5cf6" />
+                  </linearGradient>
+                  <linearGradient id="volFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#4e7dff" stopOpacity={0.28} />
+                    <stop offset="100%" stopColor="#4e7dff" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid stroke="#262a31" strokeDasharray="3 3" />
                 <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={{ stroke: '#262a31' }} />
                 <YAxis tick={AXIS} tickLine={false} axisLine={{ stroke: '#262a31' }} />
@@ -71,15 +83,16 @@ export default function StatsCharts({
                     payload?.[0]?.payload?.name ? `${label} · ${payload[0].payload.name}` : label
                   }
                 />
-                <Line
+                <Area
                   type="monotone"
                   dataKey="volume"
-                  stroke="#4e7dff"
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: '#4e7dff' }}
+                  stroke="url(#volStroke)"
+                  strokeWidth={2.5}
+                  fill="url(#volFill)"
+                  dot={{ r: 3, fill: '#4e7dff', strokeWidth: 0 }}
                   activeDot={{ r: 5 }}
                 />
-              </LineChart>
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         )}
@@ -111,6 +124,12 @@ export default function StatsCharts({
           <div className="mt-3 h-64">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={selectedData} margin={{ top: 5, right: 5, bottom: 0, left: -10 }}>
+                <defs>
+                  <linearGradient id="exStroke" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#4e7dff" />
+                    <stop offset="100%" stopColor="#8b5cf6" />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid stroke="#262a31" strokeDasharray="3 3" />
                 <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={{ stroke: '#262a31' }} />
                 <YAxis tick={AXIS} tickLine={false} axisLine={{ stroke: '#262a31' }} domain={['auto', 'auto']} />
@@ -120,9 +139,9 @@ export default function StatsCharts({
                   type="monotone"
                   dataKey="maxWeight"
                   name="Лучший вес"
-                  stroke="#4e7dff"
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: '#4e7dff' }}
+                  stroke="url(#exStroke)"
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: '#4e7dff', strokeWidth: 0 }}
                 />
                 <Line
                   type="monotone"
@@ -149,19 +168,26 @@ export default function StatsCharts({
         ) : (
           <div className="mt-3 h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={weightData} margin={{ top: 5, right: 5, bottom: 0, left: -10 }}>
+              <AreaChart data={weightData} margin={{ top: 5, right: 5, bottom: 0, left: -10 }}>
+                <defs>
+                  <linearGradient id="wFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#34c277" stopOpacity={0.25} />
+                    <stop offset="100%" stopColor="#34c277" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid stroke="#262a31" strokeDasharray="3 3" />
                 <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={{ stroke: '#262a31' }} />
                 <YAxis tick={AXIS} tickLine={false} axisLine={{ stroke: '#262a31' }} domain={['auto', 'auto']} />
                 <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => [`${v} кг`, 'Вес']} />
-                <Line
+                <Area
                   type="monotone"
                   dataKey="weight"
                   stroke="#34c277"
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: '#34c277' }}
+                  strokeWidth={2.5}
+                  fill="url(#wFill)"
+                  dot={{ r: 3, fill: '#34c277', strokeWidth: 0 }}
                 />
-              </LineChart>
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         )}

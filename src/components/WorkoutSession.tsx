@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Plus, X, Check, CheckCheck, Timer, SkipForward, Search, Undo2 } from 'lucide-react';
 import {
   addSetAction,
   deleteSetAction,
@@ -285,10 +287,12 @@ export default function WorkoutSession({
       ))}
 
       <button className="btn-ghost w-full" onClick={() => setPickerOpen(true)}>
-        + Упражнение
+        <Plus size={16} />
+        Упражнение
       </button>
 
       <button className="btn-ok w-full" onClick={finishWorkout} disabled={finishing}>
+        <CheckCheck size={17} />
         {finishing ? 'Завершаю…' : 'Завершить тренировку'}
       </button>
 
@@ -311,6 +315,7 @@ export default function WorkoutSession({
                     className="btn-ghost !px-3"
                     onClick={() => setRest((r) => (r ? { ...r, endsAt: r.endsAt + 30_000, total: r.total + 30 } : r))}
                   >
+                    <Timer size={15} />
                     +30 c
                   </button>
                   <button
@@ -320,6 +325,7 @@ export default function WorkoutSession({
                       beepedRef.current = false;
                     }}
                   >
+                    <SkipForward size={15} />
                     Пропустить
                   </button>
                 </div>
@@ -346,20 +352,35 @@ export default function WorkoutSession({
       </div>
 
       {/* модалка выбора упражнения */}
+      <AnimatePresence>
       {pickerOpen && (
-        <div
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center"
           onClick={() => setPickerOpen(false)}
         >
-          <div className="card flex max-h-[80dvh] w-full max-w-sm flex-col p-4" onClick={(e) => e.stopPropagation()}>
+          <motion.div
+            initial={{ y: 48, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 48, opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.21, 0.65, 0.36, 1] }}
+            className="card flex max-h-[80dvh] w-full max-w-sm flex-col p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2 className="font-semibold">Добавить упражнение</h2>
-            <input
-              className="input mt-3"
-              placeholder="Поиск…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              autoFocus
-            />
+            <div className="relative mt-3">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-mut" />
+              <input
+                className="input !pl-9"
+                placeholder="Поиск…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
             {workout.exercises.length > 0 && (
               <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm">
                 <input
@@ -389,9 +410,10 @@ export default function WorkoutSession({
             <button className="mt-3 text-center text-sm text-mut hover:text-ink" onClick={() => setPickerOpen(false)}>
               Закрыть
             </button>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -430,7 +452,7 @@ function ExerciseCard({
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 font-medium">
-              <span className="text-ok">✓</span>
+              <Check size={16} className="shrink-0 text-ok" />
               <span className="truncate">{entry.name}</span>
             </div>
             <div className="mt-1 text-sm text-mut">
@@ -439,7 +461,8 @@ function ExerciseCard({
                 : 'Без подходов'}
             </div>
           </div>
-          <button className="shrink-0 text-sm text-mut hover:text-ink" onClick={() => onToggleFinished(false)}>
+          <button className="flex shrink-0 items-center gap-1 text-sm text-mut hover:text-ink" onClick={() => onToggleFinished(false)}>
+            <Undo2 size={14} />
             Вернуть
           </button>
         </div>
@@ -464,7 +487,7 @@ function ExerciseCard({
           onClick={onRemove}
           aria-label={`Убрать ${entry.name}`}
         >
-          ✕
+          <X size={17} />
         </button>
       </div>
 
@@ -479,10 +502,15 @@ function ExerciseCard({
 
       {entry.sets.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
+          <AnimatePresence initial={false}>
           {entry.sets.map((s) => (
-            <span
+            <motion.span
               key={s.id}
-              className="num inline-flex items-center gap-1.5 rounded-lg border border-line px-2 py-1 text-sm"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.18 }}
+              className="num inline-flex items-center gap-1.5 rounded-lg border border-acc/30 bg-acc/5 px-2 py-1 text-sm"
             >
               <span className="text-mut">{s.set_number}.</span> {numStr(s.weight)}×{s.reps}
               <button
@@ -490,10 +518,11 @@ function ExerciseCard({
                 onClick={() => onRemoveSet(s.id)}
                 aria-label="Удалить подход"
               >
-                ✕
+                <X size={13} />
               </button>
-            </span>
+            </motion.span>
           ))}
+          </AnimatePresence>
         </div>
       )}
 
@@ -523,11 +552,13 @@ function ExerciseCard({
           />
         </div>
         <button className="btn-primary shrink-0" onClick={onAddSet} disabled={pending}>
-          {pending ? '…' : `+ Подход${doneSets > 0 ? ' ' + (doneSets + 1) : ''}`}
+          <Plus size={15} />
+          {pending ? '…' : `Подход${doneSets > 0 ? ' ' + (doneSets + 1) : ''}`}
         </button>
       </div>
 
-      <button className="mt-3 w-full rounded-xl border border-ok/40 py-2 text-sm font-medium text-ok transition-colors hover:bg-ok/10" onClick={() => onToggleFinished(true)}>
+      <button className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-ok/40 py-2 text-sm font-medium text-ok transition-colors hover:bg-ok/10" onClick={() => onToggleFinished(true)}>
+        <Check size={15} />
         Завершить упражнение
       </button>
     </div>
